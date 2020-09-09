@@ -1,5 +1,8 @@
 # How to enable Halide backend for improve efficiency  {#tutorial_dnn_halide}
 
+@prev_tutorial{tutorial_dnn_googlenet}
+@next_tutorial{tutorial_dnn_halide_scheduling}
+
 ## Introduction
 This tutorial guidelines how to run your models in OpenCV deep learning module
 using Halide language backend. Halide is an open-source project that let us
@@ -67,8 +70,6 @@ MSBuild.exe /m:4 /t:Build /p:Configuration=Release .\\ALL_BUILD.vcxproj
 
 ## Build OpenCV with Halide backend
 When you build OpenCV add the following configuration flags:
-
-- `ENABLE_CXX11` - enable C++11 standard
 
 - `WITH_HALIDE` - enable Halide linkage
 
