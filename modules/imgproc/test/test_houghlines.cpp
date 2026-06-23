@@ -43,6 +43,8 @@
 
 #include "test_precomp.hpp"
 
+//#define GENERATE_DATA // generate data in debug mode via CPU code path (without IPP / OpenCL and other accelerators)
+
 namespace opencv_test { namespace {
 
 template<typename T>
@@ -51,31 +53,37 @@ struct SimilarWith
     T value;
     float theta_eps;
     float rho_eps;
-    SimilarWith<T>(T val, float e, float r_e): value(val), theta_eps(e), rho_eps(r_e) { };
-    bool operator()(T other);
+    SimilarWith(T val, float e, float r_e): value(val), theta_eps(e), rho_eps(r_e) { }
+    bool operator()(const T& other);
 };
 
 template<>
-bool SimilarWith<Vec2f>::operator()(Vec2f other)
+bool SimilarWith<Vec2f>::operator()(const Vec2f& other)
 {
     return std::abs(other[0] - value[0]) < rho_eps && std::abs(other[1] - value[1]) < theta_eps;
 }
 
 template<>
-bool SimilarWith<Vec4i>::operator()(Vec4i other)
+bool SimilarWith<Vec3f>::operator()(const Vec3f& other)
+{
+    return std::abs(other[0] - value[0]) < rho_eps && std::abs(other[1] - value[1]) < theta_eps;
+}
+
+template<>
+bool SimilarWith<Vec4i>::operator()(const Vec4i& other)
 {
     return cv::norm(value, other) < theta_eps;
 }
 
 template <typename T>
-int countMatIntersection(Mat expect, Mat actual, float eps, float rho_eps)
+int countMatIntersection(const Mat& expect, const Mat& actual, float eps, float rho_eps)
 {
     int count = 0;
     if (!expect.empty() && !actual.empty())
     {
-        for (MatIterator_<T> it=expect.begin<T>(); it!=expect.end<T>(); it++)
+        for (MatConstIterator_<T> it=expect.begin<T>(); it!=expect.end<T>(); it++)
         {
-            MatIterator_<T> f = std::find_if(actual.begin<T>(), actual.end<T>(), SimilarWith<T>(*it, eps, rho_eps));
+            MatConstIterator_<T> f = std::find_if(actual.begin<T>(), actual.end<T>(), SimilarWith<T>(*it, eps, rho_eps));
             if (f != actual.end<T>())
                 count++;
         }
@@ -99,7 +107,8 @@ class BaseHoughLineTest
 public:
     enum {STANDART = 0, PROBABILISTIC};
 protected:
-    void run_test(int type);
+    template<typename LinesType, typename LineType>
+    void run_test(int type, const char* xml_name);
 
     string picture_name;
     double rhoStep;
@@ -162,60 +171,63 @@ public:
     }
 };
 
-void BaseHoughLineTest::run_test(int type)
+template<typename LinesType, typename LineType>
+void BaseHoughLineTest::run_test(int type, const char* xml_name)
 {
     string filename = cvtest::TS::ptr()->get_data_path() + picture_name;
     Mat src = imread(filename, IMREAD_GRAYSCALE);
-    EXPECT_FALSE(src.empty()) << "Invalid test image: " << filename;
+    ASSERT_FALSE(src.empty()) << "Invalid test image: " << filename;
 
-    string xml;
-    if (type == STANDART)
-        xml = string(cvtest::TS::ptr()->get_data_path()) + "imgproc/HoughLines.xml";
-    else if (type == PROBABILISTIC)
-        xml = string(cvtest::TS::ptr()->get_data_path()) + "imgproc/HoughLinesP.xml";
+    string xml = string(cvtest::TS::ptr()->get_data_path()) + "imgproc/" + xml_name;
 
     Mat dst;
     Canny(src, dst, 100, 150, 3);
-    EXPECT_FALSE(dst.empty()) << "Failed Canny edge detector";
+    ASSERT_FALSE(dst.empty()) << "Failed Canny edge detector";
 
-    Mat lines;
+    LinesType lines;
     if (type == STANDART)
         HoughLines(dst, lines, rhoStep, thetaStep, threshold, 0, 0);
     else if (type == PROBABILISTIC)
         HoughLinesP(dst, lines, rhoStep, thetaStep, threshold, minLineLength, maxGap);
 
     String test_case_name = format("lines_%s_%.0f_%.2f_%d_%d_%d", picture_name.c_str(), rhoStep, thetaStep,
-                                    threshold, minLineLength, maxGap);
+                                   threshold, minLineLength, maxGap);
     test_case_name = getTestCaseName(test_case_name);
 
+#ifdef GENERATE_DATA
+    {
+        FileStorage fs(xml, FileStorage::READ);
+        ASSERT_TRUE(!fs.isOpened() || fs[test_case_name].empty());
+    }
+    {
+        FileStorage fs(xml, FileStorage::APPEND);
+        EXPECT_TRUE(fs.isOpened()) << "Cannot open sanity data file: " << xml;
+        fs << test_case_name << Mat(lines);
+    }
+#else
     FileStorage fs(xml, FileStorage::READ);
     FileNode node = fs[test_case_name];
-    if (node.empty())
-    {
-        fs.release();
-        fs.open(xml, FileStorage::APPEND);
-        EXPECT_TRUE(fs.isOpened()) << "Cannot open sanity data file: " << xml;
-        fs << test_case_name << lines;
-        fs.release();
-        fs.open(xml, FileStorage::READ);
-        EXPECT_TRUE(fs.isOpened()) << "Cannot open sanity data file: " << xml;
-    }
+    ASSERT_FALSE(node.empty()) << "Missing test data: " << test_case_name << std::endl << "XML: " << xml;
 
-    Mat exp_lines;
-    read( fs[test_case_name], exp_lines, Mat() );
+    Mat exp_lines_;
+    read(fs[test_case_name], exp_lines_, Mat());
     fs.release();
+    LinesType exp_lines;
+    exp_lines_.copyTo(exp_lines);
 
     int count = -1;
     if (type == STANDART)
-        count = countMatIntersection<Vec2f>(exp_lines, lines, (float) thetaStep + FLT_EPSILON, (float) rhoStep + FLT_EPSILON);
+        count = countMatIntersection<LineType>(Mat(exp_lines), Mat(lines), (float) thetaStep + FLT_EPSILON, (float) rhoStep + FLT_EPSILON);
     else if (type == PROBABILISTIC)
-        count = countMatIntersection<Vec4i>(exp_lines, lines, 1e-4f, 0.f);
+        count = countMatIntersection<LineType>(Mat(exp_lines), Mat(lines), 1e-4f, 0.f);
 
 #if defined HAVE_IPP && IPP_VERSION_X100 >= 810 && !IPP_DISABLE_HOUGH
-    EXPECT_GE( count, (int) (exp_lines.total() * 0.8) );
+    EXPECT_LE(std::abs((double)count - Mat(exp_lines).total()), Mat(exp_lines).total() * 0.25)
+        << "count=" << count << " expected=" << Mat(exp_lines).total();
 #else
-    EXPECT_EQ( count, (int) exp_lines.total());
+    EXPECT_EQ(count, (int)Mat(exp_lines).total());
 #endif
+#endif // GENERATE_DATA
 }
 
 void HoughLinesPointSetTest::run_test(void)
@@ -264,17 +276,178 @@ void HoughLinesPointSetTest::run_test(void)
 
 TEST_P(StandartHoughLinesTest, regression)
 {
-    run_test(STANDART);
+    run_test<Mat, Vec2f>(STANDART, "HoughLines.xml");
 }
 
 TEST_P(ProbabilisticHoughLinesTest, regression)
 {
-    run_test(PROBABILISTIC);
+    run_test<Mat, Vec4i>(PROBABILISTIC, "HoughLinesP.xml");
+}
+
+TEST_P(StandartHoughLinesTest, regression_Vec2f)
+{
+    run_test<std::vector<Vec2f>, Vec2f>(STANDART, "HoughLines2f.xml");
+}
+
+TEST_P(StandartHoughLinesTest, regression_Vec3f)
+{
+    run_test<std::vector<Vec3f>, Vec3f>(STANDART, "HoughLines3f.xml");
 }
 
 TEST_P(HoughLinesPointSetTest, regression)
 {
     run_test();
+}
+
+TEST(HoughLinesPointSet, regression_21029)
+{
+    std::vector<Point2f> points;
+    points.push_back(Point2f(100, 100));
+    points.push_back(Point2f(1000, 1000));
+    points.push_back(Point2f(10000, 10000));
+    points.push_back(Point2f(100000, 100000));
+
+    double rhoMin = 0;
+    double rhoMax = 10;
+    double rhoStep = 0.1;
+
+    double thetaMin = 85 * CV_PI / 180.0;
+    double thetaMax = 95 * CV_PI / 180.0;
+    double thetaStep = 1 * CV_PI / 180.0;
+
+    int lines_max = 5;
+    int threshold = 100;
+
+    Mat lines;
+
+    HoughLinesPointSet(points, lines,
+        lines_max, threshold,
+        rhoMin, rhoMax, rhoStep,
+        thetaMin, thetaMax, thetaStep
+    );
+
+    EXPECT_TRUE(lines.empty());
+}
+
+TEST(HoughLines, regression_21983)
+{
+    Mat img(200, 200, CV_8UC1, Scalar(0));
+    line(img, Point(0, 100), Point(100, 100), Scalar(255));
+    std::vector<Vec2f> lines;
+    HoughLines(img, lines, 1, CV_PI/180, 90, 0, 0, 0.001, 1.58);
+    ASSERT_EQ(lines.size(), 1U);
+    EXPECT_EQ(lines[0][0], 100);
+    EXPECT_NEAR(lines[0][1], 1.57179642, 1e-4);
+}
+
+TEST(HoughLines, regression_25038_vertical)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.col(3).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(HoughLines, regression_25038_even)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.col(4).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(4, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(4, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(0, lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(HoughLines, regression_25038_horizontal)
+{
+    cv::Mat img = cv::Mat::zeros(8, 8, CV_8UC1);
+    img.row(3).setTo(255);
+
+    cv::Mat lines;
+    cv::HoughLines(img, lines, 0.5, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(CV_PI/2., lines.at<cv::Vec2f>(0)[1], 1e-5);
+
+    cv::HoughLines(img, lines, 0.05, CV_PI/4., 2);
+    EXPECT_EQ(1, lines.cols);
+    EXPECT_EQ(1, lines.rows);
+    EXPECT_EQ(2, lines.channels());
+    EXPECT_NEAR(3, lines.at<cv::Vec2f>(0)[0], 1e-5);
+    EXPECT_NEAR(CV_PI/2., lines.at<cv::Vec2f>(0)[1], 1e-5);
+}
+
+TEST(WeightedHoughLines, horizontal)
+{
+    Mat img(25, 25, CV_8UC1, Scalar(0));
+    // draw lines. from top to bottom, stronger to weaker.
+    line(img, Point(0, 6), Point(25, 6), Scalar(240));
+    line(img, Point(0, 12), Point(25, 12), Scalar(255));
+    line(img, Point(0, 18), Point(25, 18), Scalar(220));
+
+    // detect lines
+    std::vector<Vec2f> lines;
+    int threshold{220*25-1};
+    bool use_edgeval{true};
+    HoughLines(img, lines, 1, CV_PI/180, threshold, 0, 0, 0.0, CV_PI, use_edgeval);
+
+    // check results
+    ASSERT_EQ(3U, lines.size());
+    // detected lines is assumed sorted from stronger to weaker.
+    EXPECT_EQ(12, lines[0][0]);
+    EXPECT_EQ(6, lines[1][0]);
+    EXPECT_EQ(18, lines[2][0]);
+    EXPECT_NEAR(CV_PI/2, lines[0][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI/2, lines[1][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI/2, lines[2][1], CV_PI/180 + 1e-6);
+}
+
+TEST(WeightedHoughLines, diagonal)
+{
+    Mat img(25, 25, CV_8UC1, Scalar(0));
+    // draw lines.
+    line(img, Point(0, 0), Point(25, 25), Scalar(128));
+    line(img, Point(0, 25), Point(25, 0), Scalar(255));
+
+    // detect lines
+    std::vector<Vec2f> lines;
+    int threshold{128*25-1};
+    bool use_edgeval{true};
+    HoughLines(img, lines, 1, CV_PI/180, threshold, 0, 0, 0.0, CV_PI, use_edgeval);
+
+    // check results
+    ASSERT_EQ(2U, lines.size());
+    // detected lines is assumed sorted from stronger to weaker.
+    EXPECT_EQ(18, lines[0][0]); // 25*sqrt(2)/2 = 17.67 ~ 18
+    EXPECT_EQ(0, lines[1][0]);
+    EXPECT_NEAR(CV_PI/4, lines[0][1], CV_PI/180 + 1e-6);
+    EXPECT_NEAR(CV_PI*3/4, lines[1][1], CV_PI/180 + 1e-6);
 }
 
 INSTANTIATE_TEST_CASE_P( ImgProc, StandartHoughLinesTest, testing::Combine(testing::Values( "shared/pic5.png", "../stitching/a1.png" ),

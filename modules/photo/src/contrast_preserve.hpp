@@ -91,7 +91,7 @@ double Decolor::energyCalcu(const vector <double> &Cg, const vector < vector <do
     }
 
     for(size_t i=0;i<polyGrad[0].size();i++)
-        energy[i] = -1.0*log(exp(-1.0*pow(temp[i],2)/sigma) + exp(-1.0*pow(temp1[i],2)/sigma));
+        energy[i] = -1.0*log(exp(-1.0*std::pow(temp[i],2)/sigma) + exp(-1.0*std::pow(temp1[i],2)/sigma));
 
     double sum = 0.0;
     for(size_t i=0;i<polyGrad[0].size();i++)
@@ -113,14 +113,16 @@ Decolor::Decolor()
     sigma = 0.02f;
 }
 
-vector<double> Decolor::product(const vector <Vec3i> &comb, const double initRGB[3])
+vector<double> Decolor::product(const vector<Vec3i> &comb, const double initRGB[3])
 {
     vector <double> res(comb.size());
     for (size_t i=0;i<comb.size();i++)
     {
         double dp = 0.0;
         for(int j=0;j<3;j++)
+        {
             dp = dp + (comb[i][j] * initRGB[j]);
+        }
         res[i] = dp;
     }
     return res;
@@ -149,22 +151,20 @@ void Decolor::gradvector(const Mat &img, vector <double> &grad) const
     singleChannelGradx(img,dest);
     singleChannelGrady(img,dest1);
 
-    Mat d_trans=dest.t();
-    Mat d1_trans=dest1.t();
-
-    const int height = d_trans.size().height;
-    const int width = d_trans.size().width;
+    // the function uses transposed dest and dest1 here and bellow
+    const int height = dest.size().width;
+    const int width = dest.size().height;
 
     grad.resize(width * height * 2);
 
     for(int i=0;i<height;i++)
         for(int j=0;j<width;j++)
-            grad[i*height + j] = d_trans.at<float>(i, j);
+            grad[i*width + j] = dest.at<float>(j, i);
 
     const int offset = width * height;
     for(int i=0;i<height;i++)
         for(int j=0;j<width;j++)
-            grad[offset + i * height + j] = d1_trans.at<float>(i, j);
+            grad[offset + i * width + j] = dest1.at<float>(j, i);
 }
 
 void Decolor::colorGrad(const Mat &img, vector <double> &Cg) const
@@ -187,7 +187,7 @@ void Decolor::colorGrad(const Mat &img, vector <double> &Cg) const
     Cg.resize(ImL.size());
     for(size_t i=0;i<ImL.size();i++)
     {
-        const double res = sqrt(pow(ImL[i],2) + pow(Ima[i],2) + pow(Imb[i],2))/100;
+        const double res = sqrt(std::pow(ImL[i],2) + std::pow(Ima[i],2) + std::pow(Imb[i],2))/100;
         Cg[i] = res;
     }
 }
@@ -204,14 +204,19 @@ void Decolor::add_to_vector_poly(vector < vector <double> > &polyGrad, const vec
     idx1++;
 }
 
-void Decolor::weak_order(const Mat &img, vector <double> &alf) const
+void Decolor::weak_order(const Mat &im, vector <double> &alf) const
 {
-    const int h = img.size().height;
-    const int w = img.size().width;
+    Mat img;
+    const int h = im.size().height;
+    const int w = im.size().width;
     if((h + w) > 800)
     {
         const double sizefactor = double(800)/(h+w);
-        resize(img, img, Size(cvRound(h*sizefactor), cvRound(w*sizefactor)));
+        resize(im, img, Size(cvRound(w*sizefactor), cvRound(h*sizefactor)));
+    }
+    else
+    {
+        img = im;
     }
 
     Mat curIm = Mat(img.size(),CV_32FC1);
@@ -246,16 +251,20 @@ void Decolor::weak_order(const Mat &img, vector <double> &alf) const
         alf[i] -= tmp1[i] * tmp2[i] * tmp3[i];
 }
 
-void Decolor::grad_system(const Mat &img, vector < vector < double > > &polyGrad,
+void Decolor::grad_system(const Mat &im, vector < vector < double > > &polyGrad,
         vector < double > &Cg, vector <Vec3i>& comb) const
 {
-    int h = img.size().height;
-    int w = img.size().width;
-
+    Mat img;
+    int h = im.size().height;
+    int w = im.size().width;
     if((h + w) > 800)
     {
         const double sizefactor = double(800)/(h+w);
-        resize(img, img, Size(cvRound(h*sizefactor), cvRound(w*sizefactor)));
+        resize(im, img, Size(cvRound(w*sizefactor), cvRound(h*sizefactor)));
+    }
+    else
+    {
+        img = im;
     }
 
     h = img.size().height;
@@ -268,7 +277,9 @@ void Decolor::grad_system(const Mat &img, vector < vector < double > > &polyGrad
 
     int idx = 0, idx1 = 0;
     for(int r=0 ;r <=order; r++)
+    {
         for(int g=0; g<=order;g++)
+        {
             for(int b =0; b <=order;b++)
             {
                 if((r+g+b)<=order && (r+g+b) > 0)
@@ -276,14 +287,16 @@ void Decolor::grad_system(const Mat &img, vector < vector < double > > &polyGrad
                     add_vector(comb,idx,r,g,b);
                     for(int i = 0;i<h;i++)
                         for(int j=0;j<w;j++)
-                            curIm.at<float>(i,j)=
-                                pow(rgb_channel[2].at<float>(i,j),r)*pow(rgb_channel[1].at<float>(i,j),g)*
-                                pow(rgb_channel[0].at<float>(i,j),b);
+                            curIm.at<float>(i,j)=static_cast<float>(
+                                std::pow(rgb_channel[2].at<float>(i,j),r)*std::pow(rgb_channel[1].at<float>(i,j),g)*
+                                std::pow(rgb_channel[0].at<float>(i,j),b));
                     vector <double> curGrad;
                     gradvector(curIm,curGrad);
                     add_to_vector_poly(polyGrad,curGrad,idx1);
                 }
             }
+        }
+    }
 }
 
 void Decolor::wei_update_matrix(const vector < vector <double> > &poly, const vector <double> &Cg, Mat &X)
@@ -296,7 +309,6 @@ void Decolor::wei_update_matrix(const vector < vector <double> > &poly, const ve
         for (int j = 0; j < size0;j++)
             P.at<float>(i,j) = static_cast<float>(poly[i][j]);
 
-    const Mat P_trans = P.t();
     Mat B = Mat(size, size0, CV_32FC1);
     for(int i =0;i < size;i++)
     {
@@ -304,7 +316,8 @@ void Decolor::wei_update_matrix(const vector < vector <double> > &poly, const ve
             B.at<float>(i,j) = static_cast<float>(poly[i][j] * Cg[j]);
     }
 
-    Mat A = P*P_trans;
+    Mat A;
+    mulTransposed(P, A, false);
     solve(A, B, X, DECOMP_NORMAL);
 
 }
@@ -343,18 +356,24 @@ void Decolor::grayImContruct(vector <double> &wei, const Mat &img, Mat &Gray) co
     int kk =0;
 
     for(int r =0;r<=order;r++)
+    {
         for(int g=0;g<=order;g++)
+        {
             for(int b=0;b<=order;b++)
+            {
                 if((r + g + b) <=order && (r+g+b) > 0)
                 {
                     for(int i = 0;i<h;i++)
                         for(int j=0;j<w;j++)
-                            Gray.at<float>(i,j)=Gray.at<float>(i,j) +
-                                static_cast<float>(wei[kk])*pow(rgb_channel[2].at<float>(i,j),r)*pow(rgb_channel[1].at<float>(i,j),g)*
-                                pow(rgb_channel[0].at<float>(i,j),b);
+                            Gray.at<float>(i,j)=static_cast<float>(Gray.at<float>(i,j) +
+                                static_cast<float>(wei[kk])*std::pow(rgb_channel[2].at<float>(i,j),r)*std::pow(rgb_channel[1].at<float>(i,j),g)*
+                                std::pow(rgb_channel[0].at<float>(i,j),b));
 
                     kk=kk+1;
                 }
+            }
+        }
+    }
 
     double minval, maxval;
     minMaxLoc(Gray, &minval, &maxval);

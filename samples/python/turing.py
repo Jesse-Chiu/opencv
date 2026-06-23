@@ -27,12 +27,12 @@ USAGE: turing.py [-o <output.avi>]
 Press ESC to stop.
 '''
 
-if __name__ == '__main__':
+def main():
     print(help_message)
 
     w, h = 512, 512
 
-    args, args_list = getopt.getopt(sys.argv[1:], 'o:', [])
+    args, _args_list = getopt.getopt(sys.argv[1:], 'o:', [])
     args = dict(args)
     out = None
     if '-o' in args:
@@ -62,7 +62,7 @@ if __name__ == '__main__':
             vs.append(v)
         mi = np.argmin(vs, 0)
         a += np.choose(mi, ms) * 0.025
-        a = (a-a.min()) / a.ptp()
+        a = (a-a.min()) / np.ptp(a)
 
         if out:
             out.write(a)
@@ -71,4 +71,11 @@ if __name__ == '__main__':
         cv.imshow('a', vis)
         if cv.waitKey(5) == 27:
             break
+
+    print('Done')
+
+
+if __name__ == '__main__':
+    print(__doc__)
+    main()
     cv.destroyAllWindows()

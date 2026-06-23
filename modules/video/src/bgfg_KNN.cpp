@@ -64,7 +64,7 @@ static const float defaultDist2Threshold = 20.0f*20.0f;//threshold on distance f
 static const unsigned char defaultnShadowDetection2 = (unsigned char)127; // value to use in the segmentation mask for shadows, set 0 not to do shadow detection
 static const float defaultfTau = 0.5f; // Tau - shadow threshold, see the paper for explanation
 
-class BackgroundSubtractorKNNImpl : public BackgroundSubtractorKNN
+class BackgroundSubtractorKNNImpl CV_FINAL : public BackgroundSubtractorKNN
 {
 public:
     //! the default constructor
@@ -110,7 +110,7 @@ public:
     //set parameters
     // N - the number of samples stored in memory per model
     nN = defaultNsamples;
-    //kNN - k nearest neighbour - number on NN for detcting background - default K=[0.1*nN]
+    //kNN - k nearest neighbour - number on NN for detecting background - default K=[0.1*nN]
     nkNN=MAX(1,cvRound(0.1*nN*3+0.40));
 
     //Tb - Threshold Tb*kernelwidth
@@ -128,12 +128,14 @@ public:
 #endif
     }
     //! the destructor
-    ~BackgroundSubtractorKNNImpl() {}
+    ~BackgroundSubtractorKNNImpl() CV_OVERRIDE {}
     //! the update operator
-    void apply(InputArray image, OutputArray fgmask, double learningRate=-1);
+    void apply(InputArray image, OutputArray fgmask, double learningRate) CV_OVERRIDE;
+
+    void apply(InputArray image, InputArray knownForegroundMask, OutputArray fgmask, double learningRate) CV_OVERRIDE;
 
     //! computes a background image which are the mean of all background gaussians
-    virtual void getBackgroundImage(OutputArray backgroundImage) const;
+    virtual void getBackgroundImage(OutputArray backgroundImage) const CV_OVERRIDE;
 
     //! re-initialization method
     void initialize(Size _frameSize, int _frameType)
@@ -214,22 +216,24 @@ public:
         }
     }
 
-    virtual int getHistory() const { return history; }
-    virtual void setHistory(int _nframes) { history = _nframes; }
+    virtual String getDefaultName() const CV_OVERRIDE { return "BackgroundSubtractor_KNN"; }
 
-    virtual int getNSamples() const { return nN; }
-    virtual void setNSamples(int _nN) { nN = _nN; }//needs reinitialization!
+    virtual int getHistory() const CV_OVERRIDE { return history; }
+    virtual void setHistory(int _nframes) CV_OVERRIDE { history = _nframes; }
 
-    virtual int getkNNSamples() const { return nkNN; }
-    virtual void setkNNSamples(int _nkNN) { nkNN = _nkNN; }
+    virtual int getNSamples() const CV_OVERRIDE { return nN; }
+    virtual void setNSamples(int _nN) CV_OVERRIDE { nN = _nN; }//needs reinitialization!
 
-    virtual double getDist2Threshold() const { return fTb; }
-    virtual void setDist2Threshold(double _dist2Threshold) { fTb = (float)_dist2Threshold; }
+    virtual int getkNNSamples() const CV_OVERRIDE { return nkNN; }
+    virtual void setkNNSamples(int _nkNN) CV_OVERRIDE { nkNN = _nkNN; }
 
-    virtual bool getDetectShadows() const { return bShadowDetection; }
-    virtual void setDetectShadows(bool detectshadows)
+    virtual double getDist2Threshold() const CV_OVERRIDE { return fTb; }
+    virtual void setDist2Threshold(double _dist2Threshold) CV_OVERRIDE { fTb = (float)_dist2Threshold; }
+
+    virtual bool getDetectShadows() const CV_OVERRIDE { return bShadowDetection; }
+    virtual void setDetectShadows(bool detectshadows) CV_OVERRIDE
     {
-        if ((bShadowDetection && detectshadows) || (!bShadowDetection && !detectshadows))
+        if (bShadowDetection == detectshadows)
             return;
         bShadowDetection = detectshadows;
 #ifdef HAVE_OPENCL
@@ -241,13 +245,13 @@ public:
 #endif
     }
 
-    virtual int getShadowValue() const { return nShadowDetection; }
-    virtual void setShadowValue(int value) { nShadowDetection = (uchar)value; }
+    virtual int getShadowValue() const CV_OVERRIDE { return nShadowDetection; }
+    virtual void setShadowValue(int value) CV_OVERRIDE { nShadowDetection = (uchar)value; }
 
-    virtual double getShadowThreshold() const { return fTau; }
-    virtual void setShadowThreshold(double value) { fTau = (float)value; }
+    virtual double getShadowThreshold() const CV_OVERRIDE { return fTau; }
+    virtual void setShadowThreshold(double value) CV_OVERRIDE { fTau = (float)value; }
 
-    virtual void write(FileStorage& fs) const
+    virtual void write(FileStorage& fs) const CV_OVERRIDE
     {
         writeFormat(fs);
         fs << "name" << name_
@@ -260,7 +264,7 @@ public:
         << "shadowThreshold" << fTau;
     }
 
-    virtual void read(const FileNode& fn)
+    virtual void read(const FileNode& fn) CV_OVERRIDE
     {
         CV_Assert( (String)fn["name"] == name_ );
         history = (int)fn["history"];
@@ -292,7 +296,7 @@ protected:
     //less important parameters - things you might change but be careful
     ////////////////////////
     int nN;//totlal number of samples
-    int nkNN;//number on NN for detcting background - default K=[0.1*nN]
+    int nkNN;//number on NN for detecting background - default K=[0.1*nN]
 
     //shadow detection parameters
     bool bShadowDetection;//default 1 - do shadow detection
@@ -524,7 +528,9 @@ public:
                int _nkNN,
                float _fTau,
                bool _bShadowDetection,
-               uchar _nShadowDetection)
+               uchar _nShadowDetection,
+               const Mat& _knownForegroundMask)
+            :  knownForegroundMask(_knownForegroundMask)
     {
         src = &_src;
         dst = &_dst;
@@ -546,7 +552,7 @@ public:
         m_nShadowDetection = _nShadowDetection;
     }
 
-    void operator()(const Range& range) const
+    void operator()(const Range& range) const CV_OVERRIDE
     {
         int y0 = range.start, y1 = range.end;
         int ncols = src->cols, nchannels = src->channels();
@@ -585,6 +591,17 @@ public:
                         m_nShortCounter,
                         include
                         );
+                // Check that foreground mask exists
+                if (!knownForegroundMask.empty()) {
+                    // If input mask states pixel is foreground
+                    if (knownForegroundMask.at<uchar>(y, x) > 0)
+                    {
+                        mask[x] = 255; // ensure output mask marks this pixel as FG
+                        data += nchannels;
+                        m_aModel += m_nN*3*ndata;
+                        continue;
+                    }
+                }
                 switch (result)
                 {
                     case 0:
@@ -624,6 +641,7 @@ public:
     int m_nkNN;
     bool m_bShadowDetection;
     uchar m_nShadowDetection;
+    const Mat& knownForegroundMask;
 };
 
 #ifdef HAVE_OPENCL
@@ -726,9 +744,14 @@ void BackgroundSubtractorKNNImpl::create_ocl_apply_kernel()
 
 #endif
 
-void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, double learningRate)
+// Base 3 version class
+void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, double learningRate) {
+    apply(_image,  noArray(), _fgmask, learningRate);
+}
+
+void BackgroundSubtractorKNNImpl::apply(InputArray _image, InputArray _knownForegroundMask, OutputArray _fgmask, double learningRate)
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
 #ifdef HAVE_OPENCL
     if (opencl_ON)
@@ -754,6 +777,14 @@ void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, 
     Mat image = _image.getMat();
     _fgmask.create( image.size(), CV_8U );
     Mat fgmask = _fgmask.getMat();
+
+    Mat knownForegroundMask = _knownForegroundMask.getMat();
+
+    if(!knownForegroundMask.empty())
+    {
+    CV_Assert(knownForegroundMask.type() == CV_8UC1);
+    CV_Assert(knownForegroundMask.size() == image.size());
+    }
 
     ++nframes;
     learningRate = learningRate >= 0 && nframes > 1 ? learningRate : 1./std::min( 2*nframes, history );
@@ -789,7 +820,8 @@ void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, 
                              nkNN,
                              fTau,
                              bShadowDetection,
-                             nShadowDetection),
+                             nShadowDetection,
+                             knownForegroundMask),
                              image.total()/(double)(1 << 16));
 
     nShortCounter++;//0,1,...,nShortUpdate-1
@@ -814,7 +846,7 @@ void BackgroundSubtractorKNNImpl::apply(InputArray _image, OutputArray _fgmask, 
 
 void BackgroundSubtractorKNNImpl::getBackgroundImage(OutputArray backgroundImage) const
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
 #ifdef HAVE_OPENCL
     if (opencl_ON)

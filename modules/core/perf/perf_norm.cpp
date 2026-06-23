@@ -14,7 +14,7 @@ typedef perf::TestBaseWithParam<Size_MatType_NormType_t> Size_MatType_NormType;
 PERF_TEST_P(Size_MatType_NormType, norm,
             testing::Combine(
                 testing::Values(TYPICAL_MAT_SIZES),
-                testing::Values(TYPICAL_MAT_TYPES),
+                testing::Values(CV_8UC1, CV_8UC4, CV_8SC1, CV_16UC1, CV_16SC1, CV_32SC1, CV_32FC1, CV_64FC1),
                 testing::Values((int)NORM_INF, (int)NORM_L1, (int)NORM_L2)
                 )
             )
@@ -36,7 +36,7 @@ PERF_TEST_P(Size_MatType_NormType, norm,
 PERF_TEST_P(Size_MatType_NormType, norm_mask,
             testing::Combine(
                 testing::Values(TYPICAL_MAT_SIZES),
-                testing::Values(TYPICAL_MAT_TYPES),
+                testing::Values(CV_8UC1, CV_8UC4, CV_8SC1, CV_16UC1, CV_16SC1, CV_32SC1, CV_32FC1, CV_64FC1),
                 testing::Values((int)NORM_INF, (int)NORM_L1, (int)NORM_L2)
                 )
             )
@@ -59,7 +59,7 @@ PERF_TEST_P(Size_MatType_NormType, norm_mask,
 PERF_TEST_P(Size_MatType_NormType, norm2,
             testing::Combine(
                 testing::Values(TYPICAL_MAT_SIZES),
-                testing::Values(TYPICAL_MAT_TYPES),
+                testing::Values(CV_8UC1, CV_8UC4, CV_8SC1, CV_16UC1, CV_16SC1, CV_32SC1, CV_32FC1, CV_64FC1),
                 testing::Values((int)NORM_INF, (int)NORM_L1, (int)NORM_L2, (int)(NORM_RELATIVE+NORM_INF), (int)(NORM_RELATIVE+NORM_L1), (int)(NORM_RELATIVE+NORM_L2))
                 )
             )
@@ -82,7 +82,7 @@ PERF_TEST_P(Size_MatType_NormType, norm2,
 PERF_TEST_P(Size_MatType_NormType, norm2_mask,
             testing::Combine(
                 testing::Values(TYPICAL_MAT_SIZES),
-                testing::Values(TYPICAL_MAT_TYPES),
+                testing::Values(CV_8UC1, CV_8UC4, CV_8SC1, CV_16UC1, CV_16SC1, CV_32SC1, CV_32FC1, CV_64FC1),
                 testing::Values((int)NORM_INF, (int)NORM_L1, (int)NORM_L2, (int)(NORM_RELATIVE|NORM_INF), (int)(NORM_RELATIVE|NORM_L1), (int)(NORM_RELATIVE|NORM_L2))
                 )
             )
@@ -126,7 +126,7 @@ PERF_TEST_P(PerfHamming, norm,
 
     TEST_CYCLE() n = cv::norm(src, normType);
 
-    (void)n;
+    CV_UNUSED(n);
     SANITY_CHECK_NOTHING();
 }
 
@@ -150,7 +150,7 @@ PERF_TEST_P(PerfHamming, norm2,
 
     TEST_CYCLE() n = cv::norm(src1, src2, normType);
 
-    (void)n;
+    CV_UNUSED(n);
     SANITY_CHECK_NOTHING();
 }
 
@@ -251,6 +251,55 @@ PERF_TEST_P( Size_MatType, normalize_minmax, TYPICAL_MATS )
     TEST_CYCLE() cv::normalize(src, dst, 20., 100., NORM_MINMAX);
 
     SANITY_CHECK(dst, 1e-6, ERROR_RELATIVE);
+}
+
+typedef TestBaseWithParam< int > test_len;
+PERF_TEST_P(test_len, hal_normL1_u8,
+            testing::Values(300000, 2000000)
+           )
+{
+    int len = GetParam();
+
+    Mat src1(1, len, CV_8UC1);
+    Mat src2(1, len, CV_8UC1);
+
+    declare.in(src1, src2, WARMUP_RNG);
+    double n;
+    TEST_CYCLE() n = hal::normL1_(src1.ptr<uchar>(0), src2.ptr<uchar>(0), len);
+    CV_UNUSED(n);
+    SANITY_CHECK_NOTHING();
+}
+
+PERF_TEST_P(test_len, hal_normL1_f32,
+            testing::Values(300000, 2000000)
+           )
+{
+    int len = GetParam();
+
+    Mat src1(1, len, CV_32FC1);
+    Mat src2(1, len, CV_32FC1);
+
+    declare.in(src1, src2, WARMUP_RNG);
+    double n;
+    TEST_CYCLE() n = hal::normL1_(src1.ptr<float>(0), src2.ptr<float>(0), len);
+    CV_UNUSED(n);
+    SANITY_CHECK_NOTHING();
+}
+
+PERF_TEST_P(test_len, hal_normL2Sqr,
+            testing::Values(300000, 2000000)
+           )
+{
+    int len = GetParam();
+
+    Mat src1(1, len, CV_32FC1);
+    Mat src2(1, len, CV_32FC1);
+
+    declare.in(src1, src2, WARMUP_RNG);
+    double n;
+    TEST_CYCLE() n = hal::normL2Sqr_(src1.ptr<float>(0), src2.ptr<float>(0), len);
+    CV_UNUSED(n);
+    SANITY_CHECK_NOTHING();
 }
 
 } // namespace

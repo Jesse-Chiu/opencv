@@ -2,7 +2,6 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
-#include <opencv2/stitching.hpp>
 
 using namespace std;
 using namespace cv;
@@ -11,27 +10,33 @@ namespace
 {
 void basicPanoramaStitching(const string &img1Path, const string &img2Path)
 {
-    Mat img1 = imread(img1Path);
-    Mat img2 = imread(img2Path);
+    Mat img1 = imread( samples::findFile( img1Path ) );
+    Mat img2 = imread( samples::findFile( img2Path ) );
 
     //! [camera-pose-from-Blender-at-location-1]
-    Mat c1Mo = (Mat_<double>(4,4) << 0.9659258723258972, 0.2588190734386444, 0.0, 1.5529145002365112,
-                                     0.08852133899927139, -0.3303661346435547, -0.9396926164627075, -0.10281121730804443,
-                                     -0.24321036040782928, 0.9076734185218811, -0.342020183801651, 6.130080699920654,
-                                     0, 0, 0, 1);
+    Mat c1Mo = Mat_<double>({4,4}, {
+        0.9659258723258972, 0.2588190734386444, 0.0, 1.5529145002365112,
+        0.08852133899927139, -0.3303661346435547, -0.9396926164627075, -0.10281121730804443,
+        -0.24321036040782928, 0.9076734185218811, -0.342020183801651, 6.130080699920654,
+        0, 0, 0, 1
+    });
     //! [camera-pose-from-Blender-at-location-1]
 
     //! [camera-pose-from-Blender-at-location-2]
-    Mat c2Mo = (Mat_<double>(4,4) << 0.9659258723258972, -0.2588190734386444, 0.0, -1.5529145002365112,
-                                     -0.08852133899927139, -0.3303661346435547, -0.9396926164627075, -0.10281121730804443,
-                                     0.24321036040782928, 0.9076734185218811, -0.342020183801651, 6.130080699920654,
-                                     0, 0, 0, 1);
+    Mat c2Mo = Mat_<double>({4,4}, {
+        0.9659258723258972, -0.2588190734386444, 0.0, -1.5529145002365112,
+        -0.08852133899927139, -0.3303661346435547, -0.9396926164627075, -0.10281121730804443,
+        0.24321036040782928, 0.9076734185218811, -0.342020183801651, 6.130080699920654,
+        0, 0, 0, 1
+    });
     //! [camera-pose-from-Blender-at-location-2]
 
     //! [camera-intrinsics-from-Blender]
-    Mat cameraMatrix = (Mat_<double>(3,3) << 700.0, 0.0, 320.0,
-                                             0.0, 700.0, 240.0,
-                                             0, 0, 1);
+    Mat cameraMatrix = Mat_<double>({3,3}, {
+        700.0, 0.0, 320.0,
+        0.0, 700.0, 240.0,
+        0, 0, 1
+    });
     //! [camera-intrinsics-from-Blender]
 
     //! [extract-rotation]
@@ -68,9 +73,9 @@ void basicPanoramaStitching(const string &img1Path, const string &img2Path)
 }
 
 const char* params
-    = "{ help h         |                              | print usage }"
-      "{ image1         | ../data/Blender_Suzanne1.jpg | path to the first Blender image }"
-      "{ image2         | ../data/Blender_Suzanne2.jpg | path to the second Blender image }";
+    = "{ help h   |                      | print usage }"
+      "{ image1   | Blender_Suzanne1.jpg | path to the first Blender image }"
+      "{ image2   | Blender_Suzanne2.jpg | path to the second Blender image }";
 }
 
 int main(int argc, char *argv[])

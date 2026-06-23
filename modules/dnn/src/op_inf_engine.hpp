@@ -2,120 +2,97 @@
 // It is subject to the license terms in the LICENSE file found in the top-level directory
 // of this distribution and at http://opencv.org/license.html.
 //
-// Copyright (C) 2018, Intel Corporation, all rights reserved.
+// Copyright (C) 2018-2019, Intel Corporation, all rights reserved.
 // Third party copyrights are property of their respective owners.
 
 #ifndef __OPENCV_DNN_OP_INF_ENGINE_HPP__
 #define __OPENCV_DNN_OP_INF_ENGINE_HPP__
 
+#include "opencv2/core/cvdef.h"
+#include "opencv2/core/cvstd.hpp"
+#include "opencv2/dnn.hpp"
+
+#include "opencv2/core/async.hpp"
+#include "opencv2/core/detail/async_promise.hpp"
+
+#include "opencv2/dnn/utils/inference_engine.hpp"
+
 #ifdef HAVE_INF_ENGINE
-#include <inference_engine.hpp>
+
+#define INF_ENGINE_RELEASE_2022_1 2022010000
+#define INF_ENGINE_RELEASE_2023_0 2023000000
+#define INF_ENGINE_RELEASE_2024_0 2024000000
+
+#ifndef INF_ENGINE_RELEASE
+#warning("IE version have not been provided via command-line. Using 2022.1 by default")
+#define INF_ENGINE_RELEASE INF_ENGINE_RELEASE_2022_1
+#endif
+
+#define INF_ENGINE_VER_MAJOR_GT(ver) (((INF_ENGINE_RELEASE) / 10000) > ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_GE(ver) (((INF_ENGINE_RELEASE) / 10000) >= ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_LT(ver) (((INF_ENGINE_RELEASE) / 10000) < ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_LE(ver) (((INF_ENGINE_RELEASE) / 10000) <= ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_EQ(ver) (((INF_ENGINE_RELEASE) / 10000) == ((ver) / 10000))
+
+#if defined(__GNUC__) && __GNUC__ >= 5
+//#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+
+#include <openvino/openvino.hpp>
+#include <openvino/pass/serialize.hpp>
+#include <openvino/pass/convert_fp32_to_fp16.hpp>
+
+#if defined(__GNUC__) && __GNUC__ >= 5
+//#pragma GCC diagnostic pop
+#endif
+
 #endif  // HAVE_INF_ENGINE
+
+#define CV_ERROR_DNN_BACKEND_INFERENCE_ENGINE_NN_BUILDER_2019 do { CV_Error(Error::StsNotImplemented, "This OpenCV version is built without Inference Engine NN Builder API support (legacy API is not supported anymore)"); } while (0)
 
 namespace cv { namespace dnn {
 
+CV__DNN_INLINE_NS_BEGIN
+namespace openvino {
+
+// TODO: use std::string as parameter
+bool checkTarget(Target target);
+
+}  // namespace openvino
+CV__DNN_INLINE_NS_END
+
 #ifdef HAVE_INF_ENGINE
 
-class InfEngineBackendNet : public InferenceEngine::ICNNNetwork
+Backend& getInferenceEngineBackendTypeParam();
+
+Mat infEngineBlobToMat(const ov::Tensor& blob);
+
+void infEngineBlobsToMats(const ov::TensorVector& blobs,
+                          std::vector<Mat>& mats);
+
+CV__DNN_INLINE_NS_BEGIN
+
+void switchToOpenVINOBackend(Net& net);
+
+bool isMyriadX();
+
+bool isArmComputePlugin();
+
+CV__DNN_INLINE_NS_END
+
+ov::Core& getCore(const std::string& id);
+
+template<typename T = size_t>
+static inline std::vector<T> getShape(const Mat& mat)
 {
-public:
-    virtual void Release() noexcept;
-
-    virtual InferenceEngine::Precision getPrecision() noexcept;
-
-    virtual void getOutputsInfo(InferenceEngine::OutputsDataMap &out) noexcept;
-
-    virtual void getInputsInfo(InferenceEngine::InputsDataMap &inputs) noexcept;
-
-    virtual void getInputsInfo(InferenceEngine::InputsDataMap &inputs) const noexcept;
-
-    virtual InferenceEngine::InputInfo::Ptr getInput(const std::string &inputName) noexcept;
-
-    virtual void getName(char *pName, size_t len) noexcept;
-
-    virtual size_t layerCount() noexcept;
-
-    virtual InferenceEngine::DataPtr& getData(const char *dname) noexcept;
-
-    virtual void addLayer(const InferenceEngine::CNNLayerPtr &layer) noexcept;
-
-    virtual InferenceEngine::StatusCode addOutput(const std::string &layerName,
-                                                  size_t outputIndex = 0,
-                                                  InferenceEngine::ResponseDesc *resp = nullptr) noexcept;
-
-    virtual InferenceEngine::StatusCode getLayerByName(const char *layerName,
-                                                       InferenceEngine::CNNLayerPtr &out,
-                                                       InferenceEngine::ResponseDesc *resp) noexcept;
-
-    virtual void setTargetDevice(InferenceEngine::TargetDevice device) noexcept;
-
-    virtual InferenceEngine::TargetDevice getTargetDevice() noexcept;
-
-    virtual InferenceEngine::StatusCode setBatchSize(const size_t size) noexcept;
-
-    virtual size_t getBatchSize() const noexcept;
-
-    void initEngine();
-
-    void addBlobs(const std::vector<Ptr<BackendWrapper> >& wrappers);
-
-    void forward();
-
-    bool isInitialized();
-
-private:
-    std::vector<InferenceEngine::CNNLayerPtr> layers;
-    InferenceEngine::InputsDataMap inputs;
-    InferenceEngine::OutputsDataMap outputs;
-    InferenceEngine::BlobMap inpBlobs;
-    InferenceEngine::BlobMap outBlobs;
-    InferenceEngine::BlobMap allBlobs;
-    InferenceEngine::InferenceEnginePluginPtr engine;
-};
-
-class InfEngineBackendNode : public BackendNode
-{
-public:
-    InfEngineBackendNode(const InferenceEngine::CNNLayerPtr& layer);
-
-    void connect(std::vector<Ptr<BackendWrapper> >& inputs,
-                 std::vector<Ptr<BackendWrapper> >& outputs);
-
-    InferenceEngine::CNNLayerPtr layer;
-    // Inference Engine network object that allows to obtain the outputs of this layer.
-    Ptr<InfEngineBackendNet> net;
-};
-
-class InfEngineBackendWrapper : public BackendWrapper
-{
-public:
-    InfEngineBackendWrapper(int targetId, const Mat& m);
-
-    ~InfEngineBackendWrapper();
-
-    virtual void copyToHost();
-
-    virtual void setHostDirty();
-
-    InferenceEngine::DataPtr dataPtr;
-    InferenceEngine::TBlob<float>::Ptr blob;
-};
-
-InferenceEngine::TBlob<float>::Ptr wrapToInfEngineBlob(const Mat& m);
-
-InferenceEngine::TBlob<float>::Ptr wrapToInfEngineBlob(const Mat& m, const std::vector<size_t>& shape);
-
-InferenceEngine::DataPtr infEngineDataNode(const Ptr<BackendWrapper>& ptr);
-
-// Fuses convolution weights and biases with channel-wise scales and shifts.
-void fuseConvWeights(const std::shared_ptr<InferenceEngine::ConvolutionLayer>& conv,
-                     const Mat& w, const Mat& b = Mat());
+    std::vector<T> result(mat.dims);
+    for (int i = 0; i < mat.dims; i++)
+        result[i] = (T)mat.size[i];
+    return result;
+}
 
 #endif  // HAVE_INF_ENGINE
-
-bool haveInfEngine();
-
-void forwardInfEngine(Ptr<BackendNode>& node);
 
 }}  // namespace dnn, namespace cv
 

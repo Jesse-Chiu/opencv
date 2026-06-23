@@ -54,6 +54,10 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/calib3d.hpp"
 
+#if defined __GNUC__ && __GNUC__ >= 8
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+
 using namespace cv;
 
 #ifndef PATH_MAX
@@ -66,7 +70,7 @@ using namespace cv;
 
 static int icvMkDir( const char* filename )
 {
-    char path[PATH_MAX];
+    char path[PATH_MAX+1];
     char* p;
     int pos;
 
@@ -79,7 +83,8 @@ static int icvMkDir( const char* filename )
     mode = 0755;
 #endif /* _WIN32 */
 
-    strcpy( path, filename );
+    path[0] = '\0';
+    strncat( path, filename, PATH_MAX );
 
     p = path;
     for( ; ; )
@@ -761,7 +766,6 @@ CvBackgroundData* icvCreateBackgroundData( const char* filename, Size winsize )
         }
         if( count > 0 )
         {
-            //rewind( input );
             fseek( input, 0, SEEK_SET );
             datasize += sizeof( *data ) + sizeof( char* ) * count;
             data = (CvBackgroundData*) fastMalloc( datasize );
@@ -867,8 +871,6 @@ void icvGetNextFromBackgroundData( CvBackgroundData* data,
 
     reader->src = img;
 
-    //reader->offset.x = round % data->winsize.width;
-    //reader->offset.y = round / data->winsize.width;
     reader->offset = offset;
     reader->point = reader->offset;
     reader->scale = MAX(
@@ -891,7 +893,7 @@ void icvGetNextFromBackgroundData( CvBackgroundData* data,
  * #pragma omp parallel
  * {
  *     ...
- *     icvGetBackgourndImage( cvbgdata, cvbgreader, img );
+ *     icvGetBackgroundImage( cvbgdata, cvbgreader, img );
  *     ...
  * }
  * ...
@@ -986,7 +988,7 @@ static int icvInitBackgroundReaders( const char* filename, Size winsize )
 /*
  * icvDestroyBackgroundReaders
  *
- * Finish backgournd reading process
+ * Finish background reading process
  */
 static
 void icvDestroyBackgroundReaders()
@@ -1040,12 +1042,10 @@ void cvCreateTrainingSamples( const char* filename,
         output = fopen( filename, "wb" );
         if( output != NULL )
         {
-            int hasbg;
             int i;
             int inverse;
 
-            hasbg = 0;
-            hasbg = (bgfilename != NULL && icvInitBackgroundReaders( bgfilename,
+            const int hasbg = (bgfilename != NULL && icvInitBackgroundReaders( bgfilename,
                      Size( winwidth,winheight ) ) );
 
             Mat sample( winheight, winwidth, CV_8UC1 );
@@ -1076,8 +1076,8 @@ void cvCreateTrainingSamples( const char* filename,
                 icvPlaceDistortedSample( sample, inverse, maxintensitydev,
                     maxxangle, maxyangle, maxzangle,
                     0   /* nonzero means placing image without cut offs */,
-                    0.0 /* nozero adds random shifting                  */,
-                    0.0 /* nozero adds random scaling                   */,
+                    0.0 /* nonzero adds random shifting                  */,
+                    0.0 /* nonzero adds random scaling                   */,
                     &data );
 
                 if( showsamples )
@@ -1165,7 +1165,7 @@ void cvCreateTestSamples( const char* infoname,
             }
             else
             {
-                filename++;
+                filename++; // get basename after last path delimiter
             }
 
             count = MIN( count, cvbgdata->count );
@@ -1197,8 +1197,8 @@ void cvCreateTestSamples( const char* infoname,
                                          1, 0.0, 0.0, &data );
 
 
-                sprintf( filename, "%04d_%04d_%04d_%04d_%04d.jpg",
-                         (i + 1), x, y, width, height );
+                snprintf( filename, sizeof(fullname) - (filename - fullname), "%04d_%04d_%04d_%04d_%04d.jpg",
+                          (i + 1), x, y, width, height );
 
                 if( info )
                 {
@@ -1372,7 +1372,7 @@ int icvGetTraininDataFromVec( Mat& img, CvVecFile& userdata )
 
     size_t elements_read = fread( &tmp, sizeof( tmp ), 1, userdata.input );
     CV_Assert(elements_read == 1);
-    elements_read = fread( vector, sizeof( short ), userdata.vecsize, userdata.input );
+    elements_read = fread(vector.data(), sizeof(short), userdata.vecsize, userdata.input);
     CV_Assert(elements_read == (size_t)userdata.vecsize);
 
     if( feof( userdata.input ) || userdata.last++ >= userdata.count )

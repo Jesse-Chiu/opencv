@@ -5,12 +5,14 @@ package org.opencv.$module;
 
 $imports
 
-$docs
-$annotation
+$docs$annotation
 public class $jname {
 
     protected final long nativeObj;
-    protected $jname(long addr) { nativeObj = addr; }
+    protected $jname(long addr) {
+      nativeObj = addr;
+      $jcleaner
+    }
 
     public long getNativeObjAddr() { return nativeObj; }
 

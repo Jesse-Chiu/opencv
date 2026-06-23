@@ -43,38 +43,12 @@
 
 #include "opencv2/ts/ocl_test.hpp"
 
-#ifdef HAVE_OPENCL
-
-#define DUMP_CONFIG_PROPERTY(propertyName, propertyValue) \
-    do { \
-        std::stringstream ssName, ssValue;\
-        ssName << propertyName;\
-        ssValue << (propertyValue); \
-        ::testing::Test::RecordProperty(ssName.str(), ssValue.str()); \
-    } while (false)
-
-#define DUMP_MESSAGE_STDOUT(msg) \
-    do { \
-        std::cout << msg << std::endl; \
-    } while (false)
-
-#include <opencv2/core/opencl/opencl_info.hpp>
-
-#endif // HAVE_OPENCL
-
 namespace cvtest {
 namespace ocl {
 
 using namespace cv;
 
 int test_loop_times = 1; // TODO Read from command line / environment
-
-#ifdef HAVE_OPENCL
-void dumpOpenCLDevice()
-{
-    cv::dumpOpenCLInformation();
-}
-#endif // HAVE_OPENCL
 
 Mat TestUtils::readImage(const String &fileName, int flags)
 {
@@ -107,7 +81,7 @@ double TestUtils::checkNorm2(InputArray m1, InputArray m2, InputArray mask)
 double TestUtils::checkSimilarity(InputArray m1, InputArray m2)
 {
     Mat diff;
-    matchTemplate(m1.getMat(), m2.getMat(), diff, CV_TM_CCORR_NORMED);
+    matchTemplate(m1.getMat(), m2.getMat(), diff, cv::TM_CCORR_NORMED);
     return std::abs(diff.at<float>(0, 0) - 1.f);
 }
 
@@ -130,7 +104,6 @@ double TestUtils::checkRectSimilarity(const Size & sz, std::vector<Rect>& ob1, s
         {
             cv::Mat cpu_result_roi(cpu_result, *r);
             cpu_result_roi.setTo(1);
-            cpu_result.copyTo(cpu_result);
         }
         int cpu_area = cv::countNonZero(cpu_result > 0);
 
@@ -140,7 +113,6 @@ double TestUtils::checkRectSimilarity(const Size & sz, std::vector<Rect>& ob1, s
         {
             cv::Mat gpu_result_roi(gpu_result, *r2);
             gpu_result_roi.setTo(1);
-            gpu_result.copyTo(gpu_result);
         }
 
         cv::Mat result_;
